@@ -6,9 +6,13 @@ A modern, biometric-based Smart Attendance System built with the MERN stack (Mon
 
 - **Role-based Access Control (RBAC):** Distinct portals for Students, Teachers, and Admins.
 - **Biometric Authentication:** Integrates `face-api.js` for real-time facial recognition and secure face data enrollment.
+- **Geofencing:** Students can only initiate attendance marking when within 500 m of a configured campus coordinate (Haversine formula). The boundary is enforced **server-side**; the client cannot spoof a location to bypass it.
+- **Face Matching at Mark-Time:** A live face descriptor is captured in the browser and sent to the server, which performs the Euclidean-distance comparison (threshold < 0.5) against the stored enrolled descriptor. The client never decides the match outcome.
 - **In-Memory MongoDB:** Zero-setup database configuration utilizing `mongodb-memory-server` for instant development and testing with pre-seeded mock data.
 - **Interactive Dashboards:** Vertical column charts and dynamic UI elements for visualizing attendance trends and statistics.
 - **Responsive Design:** Built with Tailwind CSS for a seamless experience across all devices.
+
+> **Note on liveness detection:** The current biometric step is *face matching* (descriptor comparison). True liveness detection — blink/head-turn challenges or depth-based anti-spoofing — is a planned future enhancement and is not yet implemented.
 
 ## Tech Stack
 
@@ -33,8 +37,8 @@ A modern, biometric-based Smart Attendance System built with the MERN stack (Mon
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd "6th Sem project"
+git clone https://github.com/debraj7777/Smart-Attendance-System
+cd Smart-Attendance-System
 ```
 
 ### 2. Start the Backend

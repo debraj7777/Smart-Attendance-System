@@ -33,9 +33,19 @@ const userSchema = new mongoose.Schema({
     required: false
   },
   faceDescriptor: {
-    type: [Number], // Array of floats from face-api
-    required: false
-  }
+    type: String, // AES-256-GCM encrypted blob: "<iv>:<authTag>:<ciphertext>" (all hex)
+    required: false,
+    select: false,  // never returned in queries unless explicitly requested
+  },
+  // Auth hardening — account lockout
+  loginAttempts: {
+    type: Number,
+    default: 0,
+  },
+  lockUntil: {
+    type: Date,
+    default: null,
+  },
 }, {
   timestamps: true
 });

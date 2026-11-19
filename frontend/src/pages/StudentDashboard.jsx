@@ -13,8 +13,10 @@ const StudentDashboard = () => {
   // Smart Marker State
   const [isMarking, setIsMarking] = useState(false);
   const [geoStatus, setGeoStatus] = useState('idle'); // idle, locating, success, failed
+  const [verifiedCoords, setVerifiedCoords] = useState(null); // { lat, lng } once geofence passes
   const [cameraActive, setCameraActive] = useState(false);
   const [livenessStatus, setLivenessStatus] = useState('idle'); // idle, loading_models, ready, checking, verified, failed
+  const [liveDescriptor, setLiveDescriptor] = useState(null); // Float32Array captured at verify time
   const [selectedRoutineId, setSelectedRoutineId] = useState('');
   const [showSubjectBreakdown, setShowSubjectBreakdown] = useState(false);
   
@@ -89,6 +91,7 @@ const StudentDashboard = () => {
         
         if (minDistance <= MAX_RADIUS_METERS) {
           alert(`✅ You are inside permitted premises (${nearestLocation.name}).`);
+          setVerifiedCoords({ lat: latitude, lng: longitude });
           setGeoStatus('success');
           startCamera();
         } else {
@@ -142,16 +145,24 @@ const StudentDashboard = () => {
                                      .withFaceLandmarks()
                                      .withFaceDescriptor();
       
-      if (detection && user?.faceDescriptor) {
-        const storedDescriptor = new Float32Array(user.faceDescriptor);
-        const distance = faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
-        
-        if (distance < 0.5) {
-          setLivenessStatus('verified');
-        } else {
-          alert('Face match failed (Distance: ' + distance.toFixed(2) + '). Please try again.');
-          setLivenessStatus('ready');
+      if (detection && detection.descriptor) {
+        const storedDescriptor = user?.faceDescriptor
+          ? new Float32Array(user.faceDescriptor)
+          : null;
+
+        // Local pre-check (UX only — server will re-verify authoritatively)
+        if (storedDescriptor) {
+          const distance = faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
+          if (distance >= 0.5) {
+            alert('Face match failed locally (Distance: ' + distance.toFixed(2) + '). Please try again.');
+            setLivenessStatus('ready');
+            return;
+          }
         }
+
+        // Store the live descriptor to send to the server
+        setLiveDescriptor(Array.from(detection.descriptor));
+        setLivenessStatus('verified');
       } else {
         alert('No face detected. Please ensure good lighting and look directly at the camera.');
         setLivenessStatus('ready');
@@ -166,8 +177,8 @@ const StudentDashboard = () => {
     try {
       await api.post('/student/mark-attendance', {
         routineId: selectedRoutineId,
-        location: { lat: 0, lng: 0 }, // Mock
-        livenessVerified: true
+        location: verifiedCoords,   // real GPS coords captured at geofence pass
+        faceDescriptor: liveDescriptor // live descriptor for server-side verification
       });
       alert('Attendance Marked Successfully!');
       
@@ -189,6 +200,8 @@ const StudentDashboard = () => {
     setIsMarking(false);
     setGeoStatus('idle');
     setLivenessStatus('idle');
+    setVerifiedCoords(null);
+    setLiveDescriptor(null);
   };
 
   if (loading) return <div>Loading dashboard...</div>;
@@ -262,14 +275,6 @@ const StudentDashboard = () => {
                      geoStatus === 'success' ? 'Location verified successfully.' : 'Location verification failed.'}
                   </span>
                 </div>
-                {geoStatus === 'failed' && (
-                  <button 
-                    onClick={() => { setGeoStatus('success'); startCamera(); }}
-                    className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded"
-                  >
-                    Bypass (Demo)
-                  </button>
-                )}
               </div>
 
               {geoStatus === 'success' && (

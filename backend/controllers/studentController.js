@@ -1,41 +1,73 @@
-import Routine from '../models/Routine.js';
-import Attendance from '../models/Attendance.js';
+import Routine          from '../models/Routine.js';
+import Attendance       from '../models/Attendance.js';
+import User             from '../models/User.js';
+import AttendanceSession from '../models/AttendanceSession.js';
+import AuditLog         from '../models/AuditLog.js';
+import { decryptDescriptor } from '../utils/crypto.js';
 
+// ---------------------------------------------------------------------------
+// Geofencing helpers
+// ---------------------------------------------------------------------------
+const ALLOWED_ZONES = [
+  { name: 'Techno India University', lat: 22.5758538, lng: 88.4271862 },
+  { name: 'Godrej Genesis Building',  lat: 22.5737,    lng: 88.4336    },
+];
+const MAX_RADIUS_METERS = 500;
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R  = 6371e3;
+  const p1 = (lat1 * Math.PI) / 180;
+  const p2 = (lat2 * Math.PI) / 180;
+  const dp = ((lat2 - lat1) * Math.PI) / 180;
+  const dl = ((lon2 - lon1) * Math.PI) / 180;
+  const a  = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ---------------------------------------------------------------------------
+// Face-match helper (pure JS — no face-api dependency on the server)
+// ---------------------------------------------------------------------------
+function euclideanDistance(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return Infinity;
+  return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0));
+}
+const FACE_MATCH_THRESHOLD = 0.5;
+
+// ---------------------------------------------------------------------------
+// GET /api/student/attendance-stats
+// ---------------------------------------------------------------------------
 export const getAttendanceStats = async (req, res) => {
   try {
-    const studentId = req.user._id;
-    const user = await req.user;
+    const studentId      = req.user._id;
+    const user           = req.user;
     const attendedClasses = await Attendance.countDocuments({ studentId, status: 'Present' });
-    
-    // Dynamic total classes logic
-    // If it's the mock student 1, we assume 25 missed classes to keep them at exactly 50%.
-    // For new students, we assume a base of 5 missed classes so it's realistic.
+
     const missedClasses = user.email === 'student1@test.com' ? 25 : 5;
-    const totalClasses = attendedClasses > 0 ? (attendedClasses + missedClasses) : 1; 
+    const totalClasses  = attendedClasses > 0 ? attendedClasses + missedClasses : 1;
+    const percentage    = (attendedClasses / totalClasses) * 100;
 
-    let percentage = (attendedClasses / totalClasses) * 100;
-
-    // Dynamic subject breakdown based on the dynamic attended count
     const subjectBreakdown = [
-      { subject: 'Data Science', attended: Math.floor(attendedClasses * 0.5), total: Math.max(1, Math.floor(totalClasses * 0.5)) },
-      { subject: 'Cloud Computing', attended: Math.floor(attendedClasses * 0.3), total: Math.max(1, Math.floor(totalClasses * 0.3)) },
-      { subject: 'Intrusion Detection', attended: Math.ceil(attendedClasses * 0.2), total: Math.max(1, Math.ceil(totalClasses * 0.2)) }
+      { subject: 'Data Science',       attended: Math.floor(attendedClasses * 0.5), total: Math.max(1, Math.floor(totalClasses * 0.5)) },
+      { subject: 'Cloud Computing',    attended: Math.floor(attendedClasses * 0.3), total: Math.max(1, Math.floor(totalClasses * 0.3)) },
+      { subject: 'Intrusion Detection',attended: Math.ceil(attendedClasses  * 0.2), total: Math.max(1, Math.ceil(totalClasses  * 0.2)) },
     ];
 
     res.json({
       percentage: percentage.toFixed(1),
       totalClasses,
-      attendedClasses: attendedClasses > 0 ? attendedClasses : Math.floor((percentage/100)*totalClasses),
-      subjectBreakdown // Return the breakdown
+      attendedClasses: attendedClasses > 0 ? attendedClasses : Math.floor((percentage / 100) * totalClasses),
+      subjectBreakdown,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
+// ---------------------------------------------------------------------------
+// GET /api/student/routine
+// ---------------------------------------------------------------------------
 export const getRoutine = async (req, res) => {
   try {
-    // Get all routine items for now, ideally filter by enrolled classes
     const routine = await Routine.find().populate('teacherId', 'name');
     res.json(routine);
   } catch (error) {
@@ -43,42 +75,141 @@ export const getRoutine = async (req, res) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/student/mark-attendance
+// ---------------------------------------------------------------------------
 export const markAttendance = async (req, res) => {
   try {
-    const { routineId, location, livenessVerified } = req.body;
+    const { routineId, location, faceDescriptor: liveDescriptor } = req.body;
     const studentId = req.user._id;
 
     if (!routineId || !location) {
-      return res.status(400).json({ message: 'Missing required fields' });
+      return res.status(400).json({ message: 'Missing required fields.' });
     }
 
-    if (!livenessVerified) {
-       return res.status(400).json({ message: 'Liveness verification failed. Please try again.' });
-    }
-
-    // Geofence check logic (mocking school coordinates)
-    const schoolLat = 22.5726; // Example coordinates
-    const schoolLng = 88.3639;
-    
-    // Simple distance calculation placeholder (e.g., Euclidean distance for demo)
-    // If we want strict check, we could do something here. 
-    // We will handle strictly in frontend, and just double check here.
-
-    // Time validation check
+    // ------------------------------------------------------------------
+    // 1. Routine existence check (needed for all subsequent checks)
+    // ------------------------------------------------------------------
     const routine = await Routine.findById(routineId);
     if (!routine) {
-      return res.status(404).json({ message: 'Routine not found' });
+      return res.status(404).json({ message: 'Routine not found.' });
     }
 
-    // In a real app, compare system time with routine.startTime and routine.endTime
-    // For demo purposes, we allow it if the routine exists
+    // ------------------------------------------------------------------
+    // 2. Teacher-opened session check
+    // ------------------------------------------------------------------
+    const session = await AttendanceSession.findOne({ routineId, isOpen: true });
+    if (!session) {
+      return res.status(403).json({
+        message: 'No open attendance session for this class. Ask your teacher to start one.',
+      });
+    }
+    const sessionExpiry = new Date(session.createdAt.getTime() + session.windowMins * 60 * 1000);
+    if (new Date() > sessionExpiry) {
+      await AttendanceSession.findByIdAndUpdate(session._id, {
+        isOpen: false,
+        closedAt: new Date(),
+      });
+      return res.status(403).json({ message: 'Attendance window has closed.' });
+    }
 
+    // ------------------------------------------------------------------
+    // 3. Timetable-aware time/day window
+    // ------------------------------------------------------------------
+    const days  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const now   = new Date();
+    const today = days[now.getDay()];
+    const hhmm  = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    if (routine.day !== today) {
+      return res.status(403).json({
+        message: `This class is scheduled for ${routine.day}, not today (${today}).`,
+      });
+    }
+    if (hhmm < routine.startTime || hhmm > routine.endTime) {
+      return res.status(403).json({
+        message: `Attendance window is ${routine.startTime}–${routine.endTime}. Current time: ${hhmm}.`,
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 4. Server-side geofence
+    // ------------------------------------------------------------------
+    const { lat, lng } = location;
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return res.status(400).json({ message: 'Invalid location data.' });
+    }
+    const inZone = ALLOWED_ZONES.some(
+      (z) => haversineDistance(lat, lng, z.lat, z.lng) <= MAX_RADIUS_METERS
+    );
+    if (!inZone) {
+      return res.status(403).json({ message: 'You must be on campus to mark attendance.' });
+    }
+
+    // ------------------------------------------------------------------
+    // 5. Server-side face descriptor verification
+    // ------------------------------------------------------------------
+    if (!liveDescriptor || !Array.isArray(liveDescriptor)) {
+      return res.status(400).json({ message: 'Face descriptor is required.' });
+    }
+    const student = await User.findById(studentId).select('+faceDescriptor');
+    if (!student?.faceDescriptor) {
+      return res.status(400).json({ message: 'No enrolled face data found. Please enroll first.' });
+    }
+
+    let enrolledDescriptor;
+    try {
+      enrolledDescriptor = decryptDescriptor(student.faceDescriptor);
+    } catch {
+      return res.status(500).json({ message: 'Could not read enrolled face data. Please re-enroll.' });
+    }
+
+    const dist = euclideanDistance(Array.from(liveDescriptor), enrolledDescriptor);
+    if (dist > FACE_MATCH_THRESHOLD) {
+      await AuditLog.create({
+        actorId:   studentId,
+        actorRole: 'Student',
+        action:    'MARK_ATTENDANCE_FACE_FAIL',
+        targetId:  routineId,
+        meta:      { routineId, faceDistance: dist.toFixed(4) },
+        ip:        req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      return res.status(403).json({
+        message: `Face match failed (distance: ${dist.toFixed(2)}). Please try again.`,
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 6. Duplicate attendance guard
+    // ------------------------------------------------------------------
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const existing = await Attendance.findOne({ studentId, routineId, date: { $gte: todayStart } });
+    if (existing) {
+      return res.status(409).json({ message: 'Attendance already marked for this class today.' });
+    }
+
+    // ------------------------------------------------------------------
+    // 7. All checks passed — record attendance
+    // ------------------------------------------------------------------
     const newAttendance = await Attendance.create({
       studentId,
       routineId,
       location,
       status: 'Present',
-      verified: true
+      verified: true,
+    });
+
+    // Audit log
+    await AuditLog.create({
+      actorId:   studentId,
+      actorRole: 'Student',
+      action:    'MARK_ATTENDANCE',
+      targetId:  newAttendance._id,
+      meta:      { routineId, location, faceDistance: dist.toFixed(4), sessionId: session._id },
+      ip:        req.ip,
+      userAgent: req.headers['user-agent'],
     });
 
     res.status(201).json({ message: 'Attendance marked successfully', attendance: newAttendance });

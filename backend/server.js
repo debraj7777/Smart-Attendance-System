@@ -1,9 +1,11 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import cors from 'cors';
+import express  from 'express';
+import dotenv   from 'dotenv';
+import cors     from 'cors';
+import helmet   from 'helmet';
 import connectDB from './config/db.js';
+import { globalLimiter } from './middleware/rateLimiter.js';
 
-// Load env vars
+// Load env vars before anything else
 dotenv.config();
 
 import { importData } from './seeder.js';
@@ -15,28 +17,33 @@ connectDB().then(() => {
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Security headers (helmet must come before routes)
+app.use(helmet());
 
-import authRoutes from './routes/authRoutes.js';
-import adminRoutes from './routes/adminRoutes.js';
+// CORS
+app.use(cors());
+
+// Global rate limit — 200 req / 15 min per IP
+app.use(globalLimiter);
+
+// Body parser
+app.use(express.json({ limit: '2mb' })); // 2 MB cap (face descriptors are ~4 KB)
+
+import authRoutes    from './routes/authRoutes.js';
+import adminRoutes   from './routes/adminRoutes.js';
 import teacherRoutes from './routes/teacherRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
 
-// Basic Route
 app.get('/', (req, res) => {
-  res.send('Smart Attendance API is running with In-Memory DB...');
+  res.json({ status: 'ok', message: 'Smart Attendance API' });
 });
 
-// Use Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/auth',    authRoutes);
+app.use('/api/admin',   adminRoutes);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/student', studentRoutes);
 
 const PORT = process.env.PORT || 5000;
-
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
 });

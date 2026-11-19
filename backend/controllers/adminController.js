@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Routine from '../models/Routine.js';
 import Attendance from '../models/Attendance.js';
+import AuditLog from '../models/AuditLog.js';
 
 export const getDashboardStats = async (req, res) => {
   try {
@@ -178,6 +179,32 @@ export const assignSubject = async (req, res) => {
     }
 
     res.json({ message: 'Subject created and assigned successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/audit-log?page=1&limit=50&action=MARK_ATTENDANCE
+// ---------------------------------------------------------------------------
+export const getAuditLog = async (req, res) => {
+  try {
+    const page   = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit  = Math.min(100, parseInt(req.query.limit) || 50);
+    const filter = {};
+    if (req.query.action) filter.action  = req.query.action;
+    if (req.query.actor)  filter.actorId = req.query.actor;
+
+    const [logs, total] = await Promise.all([
+      AuditLog.find(filter)
+        .populate('actorId', 'name email role')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      AuditLog.countDocuments(filter),
+    ]);
+
+    res.json({ total, page, pages: Math.ceil(total / limit), logs });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

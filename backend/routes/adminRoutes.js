@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDashboardStats, getGlobalAttendance, getAllUsers, addStudent, deleteStudent, addTeacher, deleteTeacher, assignSubject } from '../controllers/adminController.js';
+import { getDashboardStats, getGlobalAttendance, getAllUsers, addStudent, deleteStudent, addTeacher, deleteTeacher, assignSubject, getAuditLog } from '../controllers/adminController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -15,5 +15,6 @@ router.delete('/delete-student/:id', deleteStudent);
 router.post('/add-teacher', addTeacher);
 router.delete('/delete-teacher/:id', deleteTeacher);
 router.post('/assign-subject', assignSubject);
+router.get('/audit-log', getAuditLog);
 
 export default router;
