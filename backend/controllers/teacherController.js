@@ -46,6 +46,15 @@ export const sendWarning = async (req, res) => {
   }
 };
 
+export const getTeacherRoutines = async (req, res) => {
+  try {
+    const routines = await Routine.find({ teacherId: req.user._id });
+    res.json(routines);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // ---------------------------------------------------------------------------
 // POST /api/teacher/sessions  — open an attendance window
 // ---------------------------------------------------------------------------

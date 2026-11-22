@@ -37,7 +37,7 @@ const TeacherDashboard = () => {
     const fetchSessionData = async () => {
       try {
         const [routineRes, sessionRes] = await Promise.all([
-          api.get('/student/routine'), // reuse the same routine list
+          api.get('/teacher/routines'),
           api.get('/teacher/sessions'),
         ]);
         setRoutines(routineRes.data);

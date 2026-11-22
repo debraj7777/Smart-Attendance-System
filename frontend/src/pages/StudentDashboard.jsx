@@ -275,6 +275,19 @@ const StudentDashboard = () => {
                      geoStatus === 'success' ? 'Location verified successfully.' : 'Location verification failed.'}
                   </span>
                 </div>
+                {/* DEV-ONLY bypass — remove before production deployment */}
+                {geoStatus === 'failed' && (
+                  <button
+                    onClick={() => {
+                      setVerifiedCoords({ lat: 22.5758538, lng: 88.4271862 }); // campus coords
+                      setGeoStatus('success');
+                      startCamera();
+                    }}
+                    className="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 border border-yellow-300 px-3 py-1 rounded font-medium"
+                  >
+                    ⚠️ Dev Bypass
+                  </button>
+                )}
               </div>
 
               {geoStatus === 'success' && (

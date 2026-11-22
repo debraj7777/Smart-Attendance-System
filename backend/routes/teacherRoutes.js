@@ -2,6 +2,7 @@ import express from 'express';
 import {
   getRoster,
   sendWarning,
+  getTeacherRoutines,
   openSession,
   closeSession,
   getMySessions,
@@ -13,6 +14,7 @@ const router = express.Router();
 router.use(protect, authorize('Teacher'));
 
 router.get('/roster',         getRoster);
+router.get('/routines',       getTeacherRoutines);
 router.post('/send-warning',  sendWarning);
 
 // Attendance session management
