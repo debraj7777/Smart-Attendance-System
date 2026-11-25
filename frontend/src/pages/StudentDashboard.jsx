@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import api from '../api/axios';
 import { AuthContext } from '../context/AuthContext';
 import { MapPin, Camera, CheckCircle, XCircle, Calendar, Play } from 'lucide-react';
-import * as faceapi from 'face-api.js/dist/face-api.js';
+import {
+  loadFaceModels,
+  detectSingleQualifiedFace,
+  averageDescriptors,
+  computeEyeAspectRatio,
+  computeYawRatio,
+} from '../utils/faceRecognition';
 
 const StudentDashboard = () => {
   const { user } = useContext(AuthContext);
@@ -16,12 +22,14 @@ const StudentDashboard = () => {
   const [verifiedCoords, setVerifiedCoords] = useState(null); // { lat, lng } once geofence passes
   const [cameraActive, setCameraActive] = useState(false);
   const [livenessStatus, setLivenessStatus] = useState('idle'); // idle, loading_models, ready, checking, verified, failed
-  const [liveDescriptor, setLiveDescriptor] = useState(null); // Float32Array captured at verify time
+  const [livenessPrompt, setLivenessPrompt] = useState('');
+  const [liveDescriptor, setLiveDescriptor] = useState(null); // 128-D averaged descriptor captured after liveness
   const [selectedRoutineId, setSelectedRoutineId] = useState('');
   const [showSubjectBreakdown, setShowSubjectBreakdown] = useState(false);
   
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const livenessAbortRef = useRef(false);
 
   useEffect(() => {
     const fetchStudentData = async () => {
@@ -123,53 +131,120 @@ const StudentDashboard = () => {
 
   const startLivenessCheck = async () => {
     setLivenessStatus('loading_models');
+    setLivenessPrompt('Loading face recognition & liveness models...');
     try {
-      const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights';
-      await Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-      ]);
+      await loadFaceModels();
       setLivenessStatus('ready');
+      setLivenessPrompt('Look directly at the camera, then click Start Liveness & Verify.');
     } catch (error) {
-      console.error("Error loading models:", error);
+      console.error('Error loading models:', error);
       setLivenessStatus('failed');
+      setLivenessPrompt('Failed to load biometric models.');
     }
   };
 
   const captureAndMatch = async () => {
     if (!videoRef.current) return;
+    livenessAbortRef.current = false;
     setLivenessStatus('checking');
-    try {
-      const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-                                     .withFaceLandmarks()
-                                     .withFaceDescriptor();
-      
-      if (detection && detection.descriptor) {
-        const storedDescriptor = user?.faceDescriptor
-          ? new Float32Array(user.faceDescriptor)
-          : null;
 
-        // Local pre-check (UX only — server will re-verify authoritatively)
-        if (storedDescriptor) {
-          const distance = faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
-          if (distance >= 0.5) {
-            alert('Face match failed locally (Distance: ' + distance.toFixed(2) + '). Please try again.');
-            setLivenessStatus('ready');
-            return;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const startedAt = Date.now();
+    const TIMEOUT_MS = 30000;
+
+    let stage = 'blink'; // 'blink' -> 'head_turn' -> 'capture'
+    const earBaselineSamples = [];
+    let baselineEar = 0;
+    let sawBlinkDip = false;
+    let sawHeadTurn = false;
+    const descriptorSamples = [];
+
+    setLivenessPrompt('Step 1/3: Keep your face centered and BLINK naturally');
+
+    try {
+      while (!livenessAbortRef.current) {
+        if (Date.now() - startedAt > TIMEOUT_MS) {
+          alert('Liveness check timed out. Please try again in good lighting.');
+          setLivenessStatus('ready');
+          setLivenessPrompt('Timed out. Click Start Liveness & Verify to retry.');
+          return;
+        }
+
+        const res = await detectSingleQualifiedFace(videoRef.current);
+        if (res.status === 'no_face') {
+          setLivenessPrompt('No face detected — look directly at the camera');
+          await sleep(140);
+          continue;
+        }
+        if (res.status === 'multiple_faces') {
+          setLivenessPrompt('Multiple faces detected — only one person allowed');
+          await sleep(160);
+          continue;
+        }
+        if (res.status === 'too_far') {
+          setLivenessPrompt('Move closer to the camera');
+          await sleep(140);
+          continue;
+        }
+        if (res.status !== 'ok') {
+          await sleep(120);
+          continue;
+        }
+
+        const { landmarks, descriptor } = res.detection;
+        const ear = computeEyeAspectRatio(landmarks);
+        const yaw = computeYawRatio(landmarks);
+
+        if (stage === 'blink') {
+          if (earBaselineSamples.length < 4) {
+            earBaselineSamples.push(ear);
+            if (earBaselineSamples.length === 4) {
+              baselineEar = earBaselineSamples.reduce((a, b) => a + b, 0) / 4;
+            }
+            setLivenessPrompt('Step 1/3: Calibrating eyes — keep looking straight...');
+          } else {
+            const blinkThreshold = Math.min(0.23, baselineEar * 0.80);
+            const reopenThreshold = Math.max(0.24, baselineEar * 0.88);
+            if (!sawBlinkDip && ear < blinkThreshold) {
+              sawBlinkDip = true;
+              setLivenessPrompt('Step 1/3: Blink detected — now open your eyes');
+            } else if (sawBlinkDip && ear >= reopenThreshold) {
+              stage = 'head_turn';
+              setLivenessPrompt('Step 2/3: Turn your head slightly LEFT or RIGHT, then look back');
+            } else if (!sawBlinkDip) {
+              setLivenessPrompt('Step 1/3: Look at the camera and BLINK once naturally');
+            }
+          }
+        } else if (stage === 'head_turn') {
+          if (!sawHeadTurn && (yaw < 0.37 || yaw > 0.63)) {
+            sawHeadTurn = true;
+            setLivenessPrompt('Step 2/3: Head turn detected — now look straight ahead');
+          } else if (sawHeadTurn && yaw >= 0.40 && yaw <= 0.60) {
+            stage = 'capture';
+            setLivenessPrompt('Step 3/3: Hold still — capturing frontal face...');
+          }
+        } else if (stage === 'capture') {
+          if (yaw >= 0.40 && yaw <= 0.60) {
+            descriptorSamples.push(descriptor);
+            setLivenessPrompt(`Step 3/3: Capturing face (${descriptorSamples.length}/3)...`);
+            if (descriptorSamples.length >= 3) {
+              const averaged = averageDescriptors(descriptorSamples);
+              setLiveDescriptor(averaged);
+              setLivenessStatus('verified');
+              setLivenessPrompt('Liveness verified & face captured. Click Submit Attendance.');
+              return;
+            }
+          } else {
+            setLivenessPrompt('Step 3/3: Face the camera straight ahead...');
           }
         }
 
-        // Store the live descriptor to send to the server
-        setLiveDescriptor(Array.from(detection.descriptor));
-        setLivenessStatus('verified');
-      } else {
-        alert('No face detected. Please ensure good lighting and look directly at the camera.');
-        setLivenessStatus('ready');
+        await sleep(110);
       }
     } catch (error) {
-      console.error("Error in face matching:", error);
+      console.error('Error in liveness/face capture:', error);
       setLivenessStatus('failed');
+      setLivenessPrompt('Liveness check failed. Please retry.');
     }
   };
 
@@ -177,21 +252,29 @@ const StudentDashboard = () => {
     try {
       await api.post('/student/mark-attendance', {
         routineId: selectedRoutineId,
-        location: verifiedCoords,   // real GPS coords captured at geofence pass
-        faceDescriptor: liveDescriptor // live descriptor for server-side verification
+        location: verifiedCoords,
+        faceDescriptor: liveDescriptor,
+        livenessVerified: true,
       });
       alert('Attendance Marked Successfully!');
-      
+
       cancelMarking();
-      
+
       const { data } = await api.get('/student/attendance-stats');
       setStats(data);
     } catch (error) {
-      alert(error.response?.data?.message || 'Failed to mark attendance');
+      const msg = error.response?.data?.message || 'Failed to mark attendance';
+      alert(msg);
+      if (error.response?.status === 403) {
+        setLiveDescriptor(null);
+        setLivenessStatus('ready');
+        setLivenessPrompt('Server verification failed. Click Start Liveness & Verify to retry.');
+      }
     }
   };
 
   const cancelMarking = () => {
+    livenessAbortRef.current = true;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -200,6 +283,7 @@ const StudentDashboard = () => {
     setIsMarking(false);
     setGeoStatus('idle');
     setLivenessStatus('idle');
+    setLivenessPrompt('');
     setVerifiedCoords(null);
     setLiveDescriptor(null);
   };
@@ -295,43 +379,51 @@ const StudentDashboard = () => {
                   <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]"></video>
                   
                   {['loading_models', 'checking'].includes(livenessStatus) && (
-                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white p-4 text-center backdrop-blur-sm">
-                      <Camera className="w-8 h-8 mb-2 animate-pulse" />
-                      <p className="font-semibold text-lg">
-                        {livenessStatus === 'loading_models' ? 'Downloading AI Engine...' : 'Matching Face Data...'}
-                      </p>
-                      {livenessStatus === 'checking' && (
-                        <div className="w-full max-w-xs bg-white/20 h-2 rounded-full mt-4 overflow-hidden">
-                          <div className="h-full bg-blue-500 animate-[progress_2s_ease-in-out_infinite]"></div>
-                        </div>
-                      )}
+                    <div className="absolute inset-x-0 bottom-0 bg-black/70 flex flex-col items-center justify-center text-white p-3 text-center backdrop-blur-sm">
+                      <div className="flex items-center space-x-2">
+                        <Camera className="w-5 h-5 animate-pulse text-blue-400" />
+                        <p className="font-semibold text-sm">
+                          {livenessPrompt || (livenessStatus === 'loading_models' ? 'Loading AI Models...' : 'Running Liveness Check...')}
+                        </p>
+                      </div>
                     </div>
                   )}
 
                   {livenessStatus === 'ready' && (
-                    <div className="absolute bottom-4 inset-x-0 flex justify-center">
-                       <button 
-                         onClick={captureAndMatch}
-                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-bold shadow-lg flex items-center shadow-blue-500/50"
-                       >
-                          <Camera className="w-5 h-5 mr-2" /> Capture & Verify
-                       </button>
+                    <div className="absolute bottom-3 inset-x-3 flex flex-col items-center space-y-2">
+                      {livenessPrompt && (
+                        <div className="bg-black/70 text-white text-xs px-3 py-1 rounded-full">
+                          {livenessPrompt}
+                        </div>
+                      )}
+                      <button
+                        onClick={captureAndMatch}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-bold shadow-lg flex items-center shadow-blue-500/50"
+                      >
+                        <Camera className="w-5 h-5 mr-2" /> Start Liveness & Verify
+                      </button>
                     </div>
                   )}
 
                   {livenessStatus === 'verified' && (
                     <div className="absolute inset-0 bg-green-500/20 border-4 border-green-500 flex items-center justify-center">
-                      <div className="bg-white text-green-600 px-4 py-2 rounded-full font-bold shadow-lg flex items-center">
-                         <CheckCircle className="w-5 h-5 mr-2" /> Face Match Verified
+                      <div className="bg-white text-green-600 px-4 py-2 rounded-full font-bold shadow-lg flex items-center text-sm">
+                        <CheckCircle className="w-5 h-5 mr-2" /> Liveness Verified & Face Captured
                       </div>
                     </div>
                   )}
 
                   {livenessStatus === 'failed' && (
-                    <div className="absolute inset-0 bg-red-500/20 border-4 border-red-500 flex items-center justify-center">
-                      <div className="bg-white text-red-600 px-4 py-2 rounded-full font-bold shadow-lg flex items-center">
-                         <XCircle className="w-5 h-5 mr-2" /> Face Match Failed
+                    <div className="absolute inset-0 bg-red-500/20 border-4 border-red-500 flex flex-col items-center justify-center space-y-3">
+                      <div className="bg-white text-red-600 px-4 py-2 rounded-full font-bold shadow-lg flex items-center text-sm">
+                        <XCircle className="w-5 h-5 mr-2" /> {livenessPrompt || 'Liveness Check Failed'}
                       </div>
+                      <button
+                        onClick={captureAndMatch}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-full text-xs font-semibold shadow"
+                      >
+                        Retry Liveness
+                      </button>
                     </div>
                   )}
                 </div>

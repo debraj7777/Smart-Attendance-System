@@ -5,15 +5,14 @@ A modern, biometric-based Smart Attendance System built with the MERN stack (Mon
 ## Features
 
 - **Role-based Access Control (RBAC):** Distinct portals for Students, Teachers, and Admins.
-- **Biometric Authentication:** Integrates `face-api.js` for real-time facial recognition and secure face data enrollment.
+- **Biometric Authentication:** Integrates `face-api.js` (`SSD MobileNet v1` + 68-point facial landmarks + ResNet-34 `faceRecognitionNet`) served locally from `frontend/public/models/` for multi-frame averaged face enrollment and recognition.
+- **Active Liveness Detection:** Enforces real-time blink detection (Eye Aspect Ratio) and 3D head-turn verification (nose-to-cheek yaw ratio), rejecting missing faces, distant faces, and multi-face frames before capturing the live descriptor.
 - **Geofencing:** Students can only initiate attendance marking when within 500 m of a configured campus coordinate (Haversine formula). The boundary is enforced **server-side**; the client cannot spoof a location to bypass it.
-- **Face Matching at Mark-Time:** A live face descriptor is captured in the browser and sent to the server, which performs the Euclidean-distance comparison (threshold ≤ 0.5) against the decrypted enrolled descriptor. The client never decides the match outcome.
+- **Face Matching at Mark-Time:** After liveness passes, a 3-frame averaged 128-D descriptor is sent to the server, which performs the Euclidean-distance comparison (threshold ≤ 0.43) against the decrypted enrolled descriptor. The client never decides the match outcome.
 - **Teacher-Controlled Sessions & Timetable Enforcement:** Teachers open time-limited attendance sessions for their assigned classes, and attendance can only be marked during an open session matching the scheduled day and time window.
 - **Zero-Config Local & Flexible MongoDB Setup:** Runs out of the box with no `.env` required—automatically falling back to an in-memory MongoDB (`mongodb-memory-server`), ephemeral session secrets, and auto-seeded mock data in non-production environments. Supports persistent MongoDB (`MONGO_URI` for Atlas or local) when configured.
 - **Interactive Dashboards:** Vertical column charts and dynamic UI elements for visualizing attendance trends and statistics.
 - **Responsive Design:** Built with Tailwind CSS for a seamless experience across all devices.
-
-> **Note on liveness detection:** The current biometric step is *face matching* (descriptor comparison). True liveness detection — blink/head-turn challenges or depth-based anti-spoofing — is a planned future enhancement and is not yet implemented.
 
 ## Tech Stack
 

@@ -31,7 +31,7 @@ function euclideanDistance(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return Infinity;
   return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0));
 }
-const FACE_MATCH_THRESHOLD = 0.5;
+const FACE_MATCH_THRESHOLD = 0.43;
 
 // ---------------------------------------------------------------------------
 // GET /api/student/attendance-stats
@@ -80,7 +80,7 @@ export const getRoutine = async (req, res) => {
 // ---------------------------------------------------------------------------
 export const markAttendance = async (req, res) => {
   try {
-    const { routineId, location, faceDescriptor: liveDescriptor } = req.body;
+    const { routineId, location, faceDescriptor: liveDescriptor, livenessVerified } = req.body;
     const studentId = req.user._id;
 
     if (!routineId || !location) {
@@ -147,10 +147,13 @@ export const markAttendance = async (req, res) => {
     }
 
     // ------------------------------------------------------------------
-    // 5. Server-side face descriptor verification
+    // 5. Server-side liveness & face descriptor verification
     // ------------------------------------------------------------------
-    if (!liveDescriptor || !Array.isArray(liveDescriptor)) {
-      return res.status(400).json({ message: 'Face descriptor is required.' });
+    if (!livenessVerified) {
+      return res.status(400).json({ message: 'Liveness check must be completed before marking attendance.' });
+    }
+    if (!liveDescriptor || !Array.isArray(liveDescriptor) || liveDescriptor.length !== 128) {
+      return res.status(400).json({ message: 'Valid 128-D face descriptor is required.' });
     }
     const student = await User.findById(studentId).select('+faceDescriptor');
     if (!student?.faceDescriptor) {
@@ -207,7 +210,7 @@ export const markAttendance = async (req, res) => {
       actorRole: 'Student',
       action:    'MARK_ATTENDANCE',
       targetId:  newAttendance._id,
-      meta:      { routineId, location, faceDistance: dist.toFixed(4), sessionId: session._id },
+      meta:      { routineId, location, faceDistance: dist.toFixed(4), livenessVerified: true, sessionId: session._id },
       ip:        req.ip,
       userAgent: req.headers['user-agent'],
     });

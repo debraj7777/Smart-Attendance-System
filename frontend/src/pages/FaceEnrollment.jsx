@@ -1,9 +1,15 @@
-import React, { useRef, useState, useEffect, useContext } from 'react';
-import * as faceapi from 'face-api.js/dist/face-api.js';
+import React, { useRef, useState, useEffect } from 'react';
 import api from '../api/axios';
 import { useNavigate } from 'react-router-dom';
-import { AuthContext } from '../context/AuthContext';
 import { Camera, ShieldCheck, AlertCircle } from 'lucide-react';
+import {
+  loadFaceModels,
+  detectSingleQualifiedFace,
+  averageDescriptors,
+  computeYawRatio,
+} from '../utils/faceRecognition';
+
+const ENROLL_SAMPLES = 5;
 
 const FaceEnrollment = () => {
   const videoRef = useRef(null);
@@ -12,24 +18,18 @@ const FaceEnrollment = () => {
   const [message, setMessage] = useState('');
   const [error, setError] = useState(null);
   const navigate = useNavigate();
-  const { user, login } = useContext(AuthContext); // Need to update context user if necessary
 
   useEffect(() => {
-    const loadModels = async () => {
+    const init = async () => {
       try {
-        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
+        await loadFaceModels();
         setLoadingModels(false);
         startVideo();
       } catch (err) {
-        setError('Failed to load facial recognition models. Please check your internet connection.');
+        setError('Failed to load facial recognition models. Please refresh the page.');
       }
     };
-    loadModels();
+    init();
 
     return () => {
       if (videoRef.current && videoRef.current.srcObject) {
@@ -56,28 +56,47 @@ const FaceEnrollment = () => {
     setMessage('');
     setError(null);
     try {
-      const detections = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-                                      .withFaceLandmarks()
-                                      .withFaceDescriptor();
-      if (detections) {
-        const faceDescriptor = Array.from(detections.descriptor);
-        
-        // Post to backend
-        await api.post('/auth/enroll-face', { faceDescriptor });
-        
-        // Success! Stop camera and navigate
-        if (videoRef.current.srcObject) {
-          videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      const samples = [];
+      let attempts = 0;
+
+      while (samples.length < ENROLL_SAMPLES && attempts < 20) {
+        attempts += 1;
+        setMessage(`Capturing face sample ${samples.length + 1}/${ENROLL_SAMPLES} — look directly at the camera...`);
+        const res = await detectSingleQualifiedFace(videoRef.current);
+
+        if (res.status === 'multiple_faces') {
+          setError('Multiple faces detected. Ensure only you are in the camera frame.');
+          setMessage('');
+          return;
         }
-        
-        // We might need to refresh the user context or just let the router handle it
-        navigate('/student');
-        window.location.reload(); // Quickest way to refresh context state
-      } else {
-        setError("No face detected! Please ensure you are looking directly at the camera in a well-lit room.");
+        if (res.status === 'ok') {
+          const yaw = computeYawRatio(res.detection.landmarks);
+          if (yaw >= 0.38 && yaw <= 0.62) {
+            samples.push(res.detection.descriptor);
+          } else {
+            setMessage('Please face the camera directly (head centered)...');
+          }
+        }
+        await new Promise((r) => setTimeout(r, 180));
       }
+
+      if (samples.length < ENROLL_SAMPLES) {
+        setError('Could not capture enough clear frontal frames. Ensure good lighting and look straight at the camera.');
+        setMessage('');
+        return;
+      }
+
+      const faceDescriptor = averageDescriptors(samples);
+      await api.post('/auth/enroll-face', { faceDescriptor });
+
+      if (videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      }
+
+      navigate('/student');
+      window.location.reload();
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to save facial data.");
+      setError(err.response?.data?.message || 'Failed to save facial data.');
     } finally {
       setCapturing(false);
     }
@@ -119,7 +138,9 @@ const FaceEnrollment = () => {
               </div>
 
               <div className="text-center space-y-4">
-                <p className="text-sm text-gray-600">Position your face inside the frame and click capture when ready.</p>
+                <p className="text-sm text-gray-600">
+                  {message || 'Position your face inside the frame and click capture when ready.'}
+                </p>
                 <button
                   onClick={handleCapture}
                   disabled={capturing}
