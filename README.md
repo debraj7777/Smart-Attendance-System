@@ -49,8 +49,13 @@ git clone https://github.com/debraj7777/Smart-Attendance-System && cd Smart-Atte
 If you want persistent storage (MongoDB Atlas or local) instead of the in-memory database, create `backend/.env` from `backend/.env.example` and set `MONGO_URI`, `JWT_SECRET`, and `DESCRIPTOR_ENCRYPTION_KEY`.
 
 ## Default Test Accounts
-Upon starting the backend for the first time, mock data is automatically imported with unique, randomly generated 8-character passwords for each account (`admin@test.com`, `teacher1@test.com`, `teacher2@test.com`, `teacher3@test.com`, `student1@test.com`, `student2@test.com`).
-- Check your backend terminal output for the exact email addresses and generated passwords.
+Upon starting the backend for the first time, mock data is automatically imported with a shared default demo password (configurable via `SEED_DEFAULT_PASSWORD` in `.env`):
+- **Default password for all seeded accounts:** `1234test`
+- **Admin:** `admin@test.com`
+- **Teachers:** `teacher1@test.com`, `teacher2@test.com`, `teacher3@test.com`
+- **Students:** `student1@test.com`, `student2@test.com`
+
+> Newly created users added via Admin or Registration can be configured with their own individual passwords.
 
 ## Project Structure
 ```text

@@ -1,18 +1,18 @@
 import mongoose  from 'mongoose';
 import dotenv    from 'dotenv';
 import bcrypt    from 'bcryptjs';
-import crypto    from 'crypto';
 import User      from './models/User.js';
 import Routine   from './models/Routine.js';
 import Attendance from './models/Attendance.js';
 
 dotenv.config();
 
-/** Generate a random password and return { plain, hashed } */
-async function makePassword(plain) {
-  const salt   = await bcrypt.genSalt(10);
-  const hashed = await bcrypt.hash(plain, salt);
-  return { plain, hashed };
+const DEFAULT_DEMO_PASSWORD = process.env.SEED_DEFAULT_PASSWORD || '1234test';
+
+/** Hash a plaintext password */
+async function hashPassword(plain) {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(plain, salt);
 }
 
 export const importData = async () => {
@@ -27,38 +27,30 @@ export const importData = async () => {
     await Routine.deleteMany();
     await mongoose.model('Attendance').deleteMany();
 
-    // Generate unique random passwords per account (8 chars, alphanumeric)
-    const makePlain = () => crypto.randomBytes(4).toString('hex'); // 8 hex chars
-
-    const adminPwd    = await makePassword(makePlain());
-    const teacher1Pwd = await makePassword(makePlain());
-    const teacher2Pwd = await makePassword(makePlain());
-    const teacher3Pwd = await makePassword(makePlain());
-    const student1Pwd = await makePassword(makePlain());
-    const student2Pwd = await makePassword(makePlain());
+    const hashedPassword = await hashPassword(DEFAULT_DEMO_PASSWORD);
 
     const accounts = [
-      { name: 'Admin User',              email: 'admin@test.com',    password: adminPwd.hashed,    role: 'Admin' },
-      { name: 'Teacher Data Science',    email: 'teacher1@test.com', password: teacher1Pwd.hashed, role: 'Teacher', assignedSubjects: ['Data Science'] },
-      { name: 'Teacher Intrusion',       email: 'teacher2@test.com', password: teacher2Pwd.hashed, role: 'Teacher', assignedSubjects: ['Intrusion Detection'] },
-      { name: 'Teacher Cloud',           email: 'teacher3@test.com', password: teacher3Pwd.hashed, role: 'Teacher', assignedSubjects: ['Cloud Computing'] },
-      { name: 'Student 1',               email: 'student1@test.com', password: student1Pwd.hashed, role: 'Student' },
-      { name: 'Student 2',               email: 'student2@test.com', password: student2Pwd.hashed, role: 'Student' },
+      { name: 'Admin User',              email: 'admin@test.com',    password: hashedPassword, role: 'Admin' },
+      { name: 'Teacher Data Science',    email: 'teacher1@test.com', password: hashedPassword, role: 'Teacher', assignedSubjects: ['Data Science'] },
+      { name: 'Teacher Intrusion',       email: 'teacher2@test.com', password: hashedPassword, role: 'Teacher', assignedSubjects: ['Intrusion Detection'] },
+      { name: 'Teacher Cloud',           email: 'teacher3@test.com', password: hashedPassword, role: 'Teacher', assignedSubjects: ['Cloud Computing'] },
+      { name: 'Student 1',               email: 'student1@test.com', password: hashedPassword, role: 'Student' },
+      { name: 'Student 2',               email: 'student2@test.com', password: hashedPassword, role: 'Student' },
     ];
 
     const createdUsers = await User.insertMany(accounts);
 
-    // Print credentials to console (never stored in source)
-    console.log('\n╔══════════════════════════════════════╗');
-    console.log('║      🔑  SEED ACCOUNT CREDENTIALS      ║');
-    console.log('╠══════════════════════════════════════╣');
-    console.log(`║  admin@test.com    → ${adminPwd.plain}   ║`);
-    console.log(`║  teacher1@test.com → ${teacher1Pwd.plain}   ║`);
-    console.log(`║  teacher2@test.com → ${teacher2Pwd.plain}   ║`);
-    console.log(`║  teacher3@test.com → ${teacher3Pwd.plain}   ║`);
-    console.log(`║  student1@test.com → ${student1Pwd.plain}   ║`);
-    console.log(`║  student2@test.com → ${student2Pwd.plain}   ║`);
-    console.log('╚══════════════════════════════════════╝\n');
+    console.log('\n╔════════════════════════════════════════════╗');
+    console.log('║        🔑  SEED ACCOUNT CREDENTIALS        ║');
+    console.log('╠════════════════════════════════════════════╣');
+    console.log(`║  Default password (all): ${DEFAULT_DEMO_PASSWORD.padEnd(16)}  ║`);
+    console.log('║  admin@test.com     (Admin)                ║');
+    console.log('║  teacher1@test.com  (Teacher - Data Sci)   ║');
+    console.log('║  teacher2@test.com  (Teacher - Intrusion)  ║');
+    console.log('║  teacher3@test.com  (Teacher - Cloud)      ║');
+    console.log('║  student1@test.com  (Student)              ║');
+    console.log('║  student2@test.com  (Student)              ║');
+    console.log('╚════════════════════════════════════════════╝\n');
 
     const [, teacher1, teacher2, teacher3, student1] = createdUsers;
 
