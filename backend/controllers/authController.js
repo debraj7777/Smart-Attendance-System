@@ -58,7 +58,7 @@ export const loginUser = async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
-    const user = await User.findOne({ email }).select('+loginAttempts +lockUntil');
+    const user = await User.findOne({ email }).select('+loginAttempts +lockUntil +faceDescriptor');
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -119,7 +119,7 @@ export const loginUser = async (req, res) => {
 // GET /api/auth/me
 // ---------------------------------------------------------------------------
 export const getMe = async (req, res) => {
-  const u = req.user;
+  const u = await User.findById(req.user._id).select('+faceDescriptor');
   res.status(200).json({
     _id:         u._id,
     name:        u.name,

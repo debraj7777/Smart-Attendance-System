@@ -2,7 +2,11 @@ import React, { useState, useContext, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { Camera, CheckCircle, Eye, EyeOff } from 'lucide-react';
-import * as faceapi from 'face-api.js/dist/face-api.js';
+import {
+  loadFaceModels,
+  detectSingleQualifiedFace,
+  averageDescriptors,
+} from '../utils/faceRecognition';
 
 const STUDENT_EMAIL_REGEX = /^[a-zA-Z]{4,}\d{12}@technoindiaeducation\.com$/i;
 const TEACHER_EMAIL_REGEX = /^[^\s@]+@technoindiaeducation\.com$/i;
@@ -26,20 +30,15 @@ const Login = () => {
   const streamRef = useRef(null);
 
   useEffect(() => {
-    const loadModels = async () => {
+    const initModels = async () => {
       try {
-        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights';
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
+        await loadFaceModels();
         setModelsLoaded(true);
       } catch (err) {
         console.error("Error loading face-api models:", err);
       }
     };
-    loadModels();
+    initModels();
   }, []);
 
   useEffect(() => {
@@ -73,26 +72,30 @@ const Login = () => {
   const captureFace = async () => {
     if (!videoRef.current) return;
     setScanning(true);
-    
-    // Capture image
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
-    const base64Image = canvas.toDataURL('image/jpeg');
 
-    // Extract descriptor
-    const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-                                   .withFaceLandmarks()
-                                   .withFaceDescriptor();
-    
-    if (detection) {
-      setFaceImage(base64Image);
-      setFaceDescriptor(Array.from(detection.descriptor));
-    } else {
-      alert("No face detected! Please look directly at the camera and ensure good lighting.");
+    try {
+      const res = await detectSingleQualifiedFace(videoRef.current);
+      if (res.status !== 'ok') {
+        const msg =
+          res.status === 'multiple_faces'
+            ? 'Multiple faces detected. Ensure only you are in frame.'
+            : res.status === 'too_far'
+            ? 'Move closer to the camera.'
+            : 'No face detected! Please look directly at the camera and ensure good lighting.';
+        alert(msg);
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
+
+      setFaceImage(canvas.toDataURL('image/jpeg'));
+      setFaceDescriptor(averageDescriptors([res.detection.descriptor]));
+    } finally {
+      setScanning(false);
     }
-    setScanning(false);
   };
 
   const handleSubmit = async (e) => {
@@ -111,7 +114,7 @@ const Login = () => {
         const res = await login(email, password, role);
         
         // Mandatory Biometric Routing Guard
-        if (res.role === 'Student' && (!res.faceDescriptor || res.faceDescriptor.length === 0)) {
+        if (res.role === 'Student' && !res.faceEnrolled) {
           navigate('/enroll-face');
         } else {
           if (role === 'Admin') navigate('/admin');

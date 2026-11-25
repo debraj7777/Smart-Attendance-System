@@ -239,13 +239,20 @@ const StudentDashboard = () => {
             setLivenessPrompt(`Step 3/3: Capturing face (${descriptorSamples.length}/3)...`);
             if (descriptorSamples.length >= 3) {
               const averaged = averageDescriptors(descriptorSamples);
-              setLiveDescriptor(averaged);
-              setLivenessStatus('verified');
-              setLivenessPrompt(
-                ENABLE_LIVENESS
-                  ? 'Liveness verified & face captured. Click Submit Attendance.'
-                  : 'Face captured. Click Submit Attendance to verify.'
-              );
+              setLivenessPrompt('Verifying against registered face...');
+              try {
+                await api.post('/student/verify-face', { faceDescriptor: averaged });
+                setLiveDescriptor(averaged);
+                setLivenessStatus('verified');
+                setLivenessPrompt('Face match verified! Click Submit Attendance.');
+              } catch (verifyErr) {
+                setLiveDescriptor(null);
+                setLivenessStatus('failed');
+                setLivenessPrompt(
+                  verifyErr.response?.data?.message ||
+                    'Face match failed. Registered face does not match.'
+                );
+              }
               return;
             }
           } else {
@@ -422,7 +429,7 @@ const StudentDashboard = () => {
                   {livenessStatus === 'verified' && (
                     <div className="absolute inset-0 bg-green-500/20 border-4 border-green-500 flex items-center justify-center">
                       <div className="bg-white text-green-600 px-4 py-2 rounded-full font-bold shadow-lg flex items-center text-sm">
-                        <CheckCircle className="w-5 h-5 mr-2" /> {ENABLE_LIVENESS ? 'Liveness Verified & Face Captured' : 'Face Captured — Ready to Submit'}
+                        <CheckCircle className="w-5 h-5 mr-2" /> Face Match Verified
                       </div>
                     </div>
                   )}

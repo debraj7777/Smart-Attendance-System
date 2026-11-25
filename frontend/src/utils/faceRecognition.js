@@ -53,7 +53,7 @@ export async function detectSingleQualifiedFace(videoEl) {
 }
 
 /**
- * Averages multiple 128-D descriptors and L2-normalizes the result.
+ * Averages multiple 128-D descriptors without distorting raw ResNet-34 embedding magnitude.
  */
 export function averageDescriptors(descriptors) {
   if (!descriptors.length) return null;
@@ -67,16 +67,6 @@ export function averageDescriptors(descriptors) {
   }
   for (let i = 0; i < len; i++) {
     mean[i] /= descriptors.length;
-  }
-
-  // L2-normalize to preserve Euclidean distance scale on unit sphere
-  let norm = 0;
-  for (let i = 0; i < len; i++) {
-    norm += mean[i] * mean[i];
-  }
-  norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < len; i++) {
-    mean[i] /= norm;
   }
 
   return Array.from(mean);

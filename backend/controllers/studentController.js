@@ -25,14 +25,54 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 // ---------------------------------------------------------------------------
-// Face-match helper (pure JS — no face-api dependency on the server)
+// Face-match helpers (pure JS — no face-api dependency on the server)
 // ---------------------------------------------------------------------------
 function euclideanDistance(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return Infinity;
   return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0));
 }
-const FACE_MATCH_THRESHOLD = 0.43;
+
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return -1;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom > 0 ? dot / denom : -1;
+}
+
+const FACE_MATCH_THRESHOLD = 0.45;
+const MIN_COSINE_SIMILARITY = 0.90;
 const REQUIRE_LIVENESS = false;
+
+async function verifyStudentFace(studentId, liveDescriptor) {
+  if (!liveDescriptor || !Array.isArray(liveDescriptor) || liveDescriptor.length !== 128) {
+    return { status: 400, error: 'Valid 128-D face descriptor is required.' };
+  }
+  const student = await User.findById(studentId).select('+faceDescriptor');
+  if (!student?.faceDescriptor) {
+    return { status: 400, error: 'No enrolled face data found. Please enroll first.' };
+  }
+
+  let enrolledDescriptor;
+  try {
+    enrolledDescriptor = decryptDescriptor(student.faceDescriptor);
+  } catch {
+    return { status: 500, error: 'Could not read enrolled face data. Please re-enroll.' };
+  }
+
+  const liveArr = Array.from(liveDescriptor);
+  const dist = euclideanDistance(liveArr, enrolledDescriptor);
+  const cos = cosineSimilarity(liveArr, enrolledDescriptor);
+  const matched = dist <= FACE_MATCH_THRESHOLD && cos >= MIN_COSINE_SIMILARITY;
+
+  return { status: 200, matched, dist, cos };
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/student/attendance-stats
@@ -153,34 +193,24 @@ export const markAttendance = async (req, res) => {
     if (REQUIRE_LIVENESS && !livenessVerified) {
       return res.status(400).json({ message: 'Liveness check must be completed before marking attendance.' });
     }
-    if (!liveDescriptor || !Array.isArray(liveDescriptor) || liveDescriptor.length !== 128) {
-      return res.status(400).json({ message: 'Valid 128-D face descriptor is required.' });
-    }
-    const student = await User.findById(studentId).select('+faceDescriptor');
-    if (!student?.faceDescriptor) {
-      return res.status(400).json({ message: 'No enrolled face data found. Please enroll first.' });
+    const faceCheck = await verifyStudentFace(studentId, liveDescriptor);
+    if (faceCheck.error) {
+      return res.status(faceCheck.status).json({ message: faceCheck.error });
     }
 
-    let enrolledDescriptor;
-    try {
-      enrolledDescriptor = decryptDescriptor(student.faceDescriptor);
-    } catch {
-      return res.status(500).json({ message: 'Could not read enrolled face data. Please re-enroll.' });
-    }
-
-    const dist = euclideanDistance(Array.from(liveDescriptor), enrolledDescriptor);
-    if (dist > FACE_MATCH_THRESHOLD) {
+    const { matched, dist, cos } = faceCheck;
+    if (!matched) {
       await AuditLog.create({
         actorId:   studentId,
         actorRole: 'Student',
         action:    'MARK_ATTENDANCE_FACE_FAIL',
         targetId:  routineId,
-        meta:      { routineId, faceDistance: dist.toFixed(4) },
+        meta:      { routineId, faceDistance: dist.toFixed(4), cosineSimilarity: cos.toFixed(4) },
         ip:        req.ip,
         userAgent: req.headers['user-agent'],
       });
       return res.status(403).json({
-        message: `Face match failed (distance: ${dist.toFixed(2)}). Please try again.`,
+        message: `Face match failed (distance: ${dist.toFixed(2)}, similarity: ${(cos * 100).toFixed(0)}%). Registered face does not match.`,
       });
     }
 
@@ -217,6 +247,38 @@ export const markAttendance = async (req, res) => {
     });
 
     res.status(201).json({ message: 'Attendance marked successfully', attendance: newAttendance });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/student/verify-face  — pre-check live descriptor against enrolled face
+// ---------------------------------------------------------------------------
+export const verifyFace = async (req, res) => {
+  try {
+    const { faceDescriptor: liveDescriptor } = req.body;
+    const faceCheck = await verifyStudentFace(req.user._id, liveDescriptor);
+    if (faceCheck.error) {
+      return res.status(faceCheck.status).json({ message: faceCheck.error });
+    }
+
+    const { matched, dist, cos } = faceCheck;
+    if (!matched) {
+      return res.status(403).json({
+        matched: false,
+        distance: Number(dist.toFixed(4)),
+        cosineSimilarity: Number(cos.toFixed(4)),
+        message: `Face match failed (distance: ${dist.toFixed(2)}, similarity: ${(cos * 100).toFixed(0)}%). Registered face does not match.`,
+      });
+    }
+
+    res.json({
+      matched: true,
+      distance: Number(dist.toFixed(4)),
+      cosineSimilarity: Number(cos.toFixed(4)),
+      message: 'Face match verified.',
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
