@@ -9,7 +9,7 @@ A modern, biometric-based Smart Attendance System built with the MERN stack (Mon
 - **Geofencing:** Students can only initiate attendance marking when within 500 m of a configured campus coordinate (Haversine formula). The boundary is enforced **server-side**; the client cannot spoof a location to bypass it.
 - **Face Matching at Mark-Time:** A live face descriptor is captured in the browser and sent to the server, which performs the Euclidean-distance comparison (threshold ≤ 0.5) against the decrypted enrolled descriptor. The client never decides the match outcome.
 - **Teacher-Controlled Sessions & Timetable Enforcement:** Teachers open time-limited attendance sessions for their assigned classes, and attendance can only be marked during an open session matching the scheduled day and time window.
-- **Flexible MongoDB Setup:** Supports persistent MongoDB (`MONGO_URI` for Atlas or local) as well as a zero-install in-memory MongoDB (`USE_IN_MEMORY_DB=true` via `mongodb-memory-server`) for local development and testing with auto-seeded mock data.
+- **Zero-Config Local & Flexible MongoDB Setup:** Runs out of the box with no `.env` required—automatically falling back to an in-memory MongoDB (`mongodb-memory-server`), ephemeral session secrets, and auto-seeded mock data in non-production environments. Supports persistent MongoDB (`MONGO_URI` for Atlas or local) when configured.
 - **Interactive Dashboards:** Vertical column charts and dynamic UI elements for visualizing attendance trends and statistics.
 - **Responsive Design:** Built with Tailwind CSS for a seamless experience across all devices.
 
@@ -37,32 +37,16 @@ A modern, biometric-based Smart Attendance System built with the MERN stack (Mon
 - Node.js (v18+ recommended)
 - npm or yarn
 
-### 1. Clone the Repository
+### Quick Start (Single Command, No `.env` Needed)
+Clone the repository and run a single command to install all dependencies and start both the backend (`http://localhost:5000`) and frontend (`http://localhost:5173`):
 ```bash
-git clone https://github.com/debraj7777/Smart-Attendance-System
-cd Smart-Attendance-System
+git clone https://github.com/debraj7777/Smart-Attendance-System && cd Smart-Attendance-System && npm start
 ```
+> On first launch, the backend automatically starts an in-memory MongoDB instance, generates ephemeral session keys, seeds mock data, and prints the generated test account credentials to the terminal.
+> For subsequent runs (after dependencies are already installed), you can run `npm run dev` from the root directory.
 
-### 2. Configure and Start the Backend
-Create a `.env` file in `backend/` (you can copy `backend/.env.example`) and set:
-- Either `MONGO_URI` (for a persistent MongoDB Atlas or local instance) **or** `USE_IN_MEMORY_DB=true` (for a temporary in-memory MongoDB instance).
-- `JWT_SECRET` (a long random secret string).
-- `DESCRIPTOR_ENCRYPTION_KEY` (a 64-character hex string for AES-256-GCM encryption of face descriptors).
-
-```bash
-cd backend
-npm install
-npm run dev
-```
-> The backend will start on `http://localhost:5000`, auto-seed mock data if no Admin exists, and print the generated test account credentials to the terminal.
-
-### 3. Start the Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-> The frontend will start on `http://localhost:5173`.
+### Optional: Persistent Database Configuration
+If you want persistent storage (MongoDB Atlas or local) instead of the in-memory database, create `backend/.env` from `backend/.env.example` and set `MONGO_URI`, `JWT_SECRET`, and `DESCRIPTOR_ENCRYPTION_KEY`.
 
 ## Default Test Accounts
 Upon starting the backend for the first time, mock data is automatically imported with unique, randomly generated 8-character passwords for each account (`admin@test.com`, `teacher1@test.com`, `teacher2@test.com`, `teacher3@test.com`, `student1@test.com`, `student2@test.com`).

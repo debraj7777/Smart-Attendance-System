@@ -1,12 +1,24 @@
 import express  from 'express';
 import dotenv   from 'dotenv';
+import crypto   from 'crypto';
 import cors     from 'cors';
 import helmet   from 'helmet';
 import connectDB from './config/db.js';
 import { globalLimiter } from './middleware/rateLimiter.js';
 
-// Load env vars before anything else
+// Load env vars before anything else (.env is optional for local/in-memory dev)
 dotenv.config();
+
+if (!process.env.MONGO_URI && process.env.NODE_ENV !== 'production') {
+  if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = crypto.randomBytes(64).toString('hex');
+    console.log('⚠️  No JWT_SECRET set — using ephemeral random secret for this session.');
+  }
+  if (!process.env.DESCRIPTOR_ENCRYPTION_KEY) {
+    process.env.DESCRIPTOR_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+    console.log('⚠️  No DESCRIPTOR_ENCRYPTION_KEY set — using ephemeral random key for this session.');
+  }
+}
 
 import { importData } from './seeder.js';
 

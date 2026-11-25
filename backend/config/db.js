@@ -7,8 +7,8 @@ const connectDB = async () => {
   /**
    * Connection priority:
    *  1. MONGO_URI env var is set → always use it (Atlas or local)
-   *  2. USE_IN_MEMORY_DB=true → in-memory (for local dev / tests with no Atlas)
-   *  3. Neither set → exit with a clear error message
+   *  2. USE_IN_MEMORY_DB=true or non-production without MONGO_URI → in-memory (zero-config local dev / demo)
+   *  3. Production without MONGO_URI → exit with a clear error message
    */
   if (process.env.MONGO_URI) {
     try {
@@ -21,7 +21,7 @@ const connectDB = async () => {
     }
   }
 
-  if (process.env.USE_IN_MEMORY_DB === 'true') {
+  if (process.env.USE_IN_MEMORY_DB === 'true' || process.env.NODE_ENV !== 'production') {
     try {
       mongoServer = await MongoMemoryServer.create();
       const uri   = mongoServer.getUri();
