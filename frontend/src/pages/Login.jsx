@@ -4,6 +4,9 @@ import { AuthContext } from '../context/AuthContext';
 import { Camera, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import * as faceapi from 'face-api.js/dist/face-api.js';
 
+const STUDENT_EMAIL_REGEX = /^[a-zA-Z]{4,}\d{12}@technoindiaeducation\.com$/i;
+const TEACHER_EMAIL_REGEX = /^[^\s@]+@technoindiaeducation\.com$/i;
+
 const Login = () => {
   const [role, setRole] = useState('Student');
   const [isLogin, setIsLogin] = useState(true);
@@ -94,6 +97,15 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (role === 'Student' && !STUDENT_EMAIL_REGEX.test(trimmedEmail)) {
+      alert('Student email must follow <name><12-digit-number>@technoindiaeducation.com (at least 4 letters before the 12 digits).');
+      return;
+    }
+    if (role === 'Teacher' && !TEACHER_EMAIL_REGEX.test(trimmedEmail)) {
+      alert('Teacher email must end with @technoindiaeducation.com.');
+      return;
+    }
     try {
       if (isLogin) {
         const res = await login(email, password, role);
@@ -163,7 +175,13 @@ const Login = () => {
                 type="email"
                 required
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
-                placeholder={`Enter ${role.toLowerCase()} email`}
+                placeholder={
+                  role === 'Student'
+                    ? 'e.g., sudeshna221001001001@technoindiaeducation.com'
+                    : role === 'Teacher'
+                    ? 'e.g., teacher1@technoindiaeducation.com'
+                    : 'Enter admin email'
+                }
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />

@@ -51,10 +51,13 @@ If you want persistent storage (MongoDB Atlas or local) instead of the in-memory
 Upon starting the backend for the first time, mock data is automatically imported with a shared default demo password (configurable via `SEED_DEFAULT_PASSWORD` in `.env`):
 - **Default password for all seeded accounts:** `1234test`
 - **Admin:** `admin@test.com`
-- **Teachers:** `teacher1@test.com`, `teacher2@test.com`, `teacher3@test.com`
-- **Students:** `student1@test.com`, `student2@test.com`
+- **Teachers** (`@technoindiaeducation.com`): `teacher1@technoindiaeducation.com`, `teacher2@technoindiaeducation.com`, `teacher3@technoindiaeducation.com`
+- **Students** (`<name><12-digit-number>@technoindiaeducation.com`, min 4 letters):
+  - `sudeshna221001001001@technoindiaeducation.com`
+  - `riya221001001002@technoindiaeducation.com`
+  - `prantik221001001003@technoindiaeducation.com`
 
-> Newly created users added via Admin or Registration can be configured with their own individual passwords.
+> Newly created users added via Admin or Registration can be configured with their own individual passwords, and must follow the institutional email format for Student and Teacher roles.
 
 ## Project Structure
 ```text

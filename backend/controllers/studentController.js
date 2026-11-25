@@ -42,7 +42,7 @@ export const getAttendanceStats = async (req, res) => {
     const user           = req.user;
     const attendedClasses = await Attendance.countDocuments({ studentId, status: 'Present' });
 
-    const missedClasses = user.email === 'student1@test.com' ? 25 : 5;
+    const missedClasses = user.email === 'sudeshna221001001001@technoindiaeducation.com' ? 25 : 5;
     const totalClasses  = attendedClasses > 0 ? attendedClasses + missedClasses : 1;
     const percentage    = (attendedClasses / totalClasses) * 100;
 

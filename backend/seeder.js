@@ -30,27 +30,29 @@ export const importData = async () => {
     const hashedPassword = await hashPassword(DEFAULT_DEMO_PASSWORD);
 
     const accounts = [
-      { name: 'Admin User',              email: 'admin@test.com',    password: hashedPassword, role: 'Admin' },
-      { name: 'Teacher Data Science',    email: 'teacher1@test.com', password: hashedPassword, role: 'Teacher', assignedSubjects: ['Data Science'] },
-      { name: 'Teacher Intrusion',       email: 'teacher2@test.com', password: hashedPassword, role: 'Teacher', assignedSubjects: ['Intrusion Detection'] },
-      { name: 'Teacher Cloud',           email: 'teacher3@test.com', password: hashedPassword, role: 'Teacher', assignedSubjects: ['Cloud Computing'] },
-      { name: 'Student 1',               email: 'student1@test.com', password: hashedPassword, role: 'Student' },
-      { name: 'Student 2',               email: 'student2@test.com', password: hashedPassword, role: 'Student' },
+      { name: 'Admin User',           email: 'admin@test.com',                                password: hashedPassword, role: 'Admin' },
+      { name: 'Teacher Data Science', email: 'teacher1@technoindiaeducation.com',              password: hashedPassword, role: 'Teacher', assignedSubjects: ['Data Science'] },
+      { name: 'Teacher Intrusion',    email: 'teacher2@technoindiaeducation.com',              password: hashedPassword, role: 'Teacher', assignedSubjects: ['Intrusion Detection'] },
+      { name: 'Teacher Cloud',        email: 'teacher3@technoindiaeducation.com',              password: hashedPassword, role: 'Teacher', assignedSubjects: ['Cloud Computing'] },
+      { name: 'Sudeshna',             email: 'sudeshna221001001001@technoindiaeducation.com',  password: hashedPassword, role: 'Student' },
+      { name: 'Riya',                 email: 'riya221001001002@technoindiaeducation.com',      password: hashedPassword, role: 'Student' },
+      { name: 'Prantik',              email: 'prantik221001001003@technoindiaeducation.com',   password: hashedPassword, role: 'Student' },
     ];
 
     const createdUsers = await User.insertMany(accounts);
 
-    console.log('\n╔════════════════════════════════════════════╗');
-    console.log('║        🔑  SEED ACCOUNT CREDENTIALS        ║');
-    console.log('╠════════════════════════════════════════════╣');
-    console.log(`║  Default password (all): ${DEFAULT_DEMO_PASSWORD.padEnd(16)}  ║`);
-    console.log('║  admin@test.com     (Admin)                ║');
-    console.log('║  teacher1@test.com  (Teacher - Data Sci)   ║');
-    console.log('║  teacher2@test.com  (Teacher - Intrusion)  ║');
-    console.log('║  teacher3@test.com  (Teacher - Cloud)      ║');
-    console.log('║  student1@test.com  (Student)              ║');
-    console.log('║  student2@test.com  (Student)              ║');
-    console.log('╚════════════════════════════════════════════╝\n');
+    console.log('\n╔════════════════════════════════════════════════════════════════╗');
+    console.log('║                  🔑  SEED ACCOUNT CREDENTIALS                  ║');
+    console.log('╠════════════════════════════════════════════════════════════════╣');
+    console.log(`║  Default password (all): ${DEFAULT_DEMO_PASSWORD.padEnd(36)}  ║`);
+    console.log('║  admin@test.com                                (Admin)         ║');
+    console.log('║  teacher1@technoindiaeducation.com             (Teacher)       ║');
+    console.log('║  teacher2@technoindiaeducation.com             (Teacher)       ║');
+    console.log('║  teacher3@technoindiaeducation.com             (Teacher)       ║');
+    console.log('║  sudeshna221001001001@technoindiaeducation.com (Student)       ║');
+    console.log('║  riya221001001002@technoindiaeducation.com     (Student)       ║');
+    console.log('║  prantik221001001003@technoindiaeducation.com  (Student)       ║');
+    console.log('╚════════════════════════════════════════════════════════════════╝\n');
 
     const [, teacher1, teacher2, teacher3, student1] = createdUsers;
 

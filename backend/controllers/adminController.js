@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Routine from '../models/Routine.js';
 import Attendance from '../models/Attendance.js';
 import AuditLog from '../models/AuditLog.js';
+import { getRoleEmailError } from '../middleware/validate.js';
 
 export const getDashboardStats = async (req, res) => {
   try {
@@ -71,6 +72,10 @@ export const getAllUsers = async (req, res) => {
 export const addStudent = async (req, res) => {
   try {
     const { name, email, password } = req.body;
+    const emailErr = getRoleEmailError(email, 'Student');
+    if (emailErr) {
+      return res.status(400).json({ message: emailErr });
+    }
     
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -112,6 +117,10 @@ export const deleteStudent = async (req, res) => {
 export const addTeacher = async (req, res) => {
   try {
     const { name, email, password } = req.body;
+    const emailErr = getRoleEmailError(email, 'Teacher');
+    if (emailErr) {
+      return res.status(400).json({ message: emailErr });
+    }
     
     const userExists = await User.findOne({ email });
     if (userExists) {
