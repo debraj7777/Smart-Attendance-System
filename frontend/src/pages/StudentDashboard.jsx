@@ -10,6 +10,8 @@ import {
   computeYawRatio,
 } from '../utils/faceRecognition';
 
+const ENABLE_LIVENESS = false;
+
 const StudentDashboard = () => {
   const { user } = useContext(AuthContext);
   const [stats, setStats] = useState(null);
@@ -135,7 +137,11 @@ const StudentDashboard = () => {
     try {
       await loadFaceModels();
       setLivenessStatus('ready');
-      setLivenessPrompt('Look directly at the camera, then click Start Liveness & Verify.');
+      setLivenessPrompt(
+        ENABLE_LIVENESS
+          ? 'Look directly at the camera, then click Start Liveness & Verify.'
+          : 'Look directly at the camera, then click Capture & Verify.'
+      );
     } catch (error) {
       console.error('Error loading models:', error);
       setLivenessStatus('failed');
@@ -152,14 +158,18 @@ const StudentDashboard = () => {
     const startedAt = Date.now();
     const TIMEOUT_MS = 30000;
 
-    let stage = 'blink'; // 'blink' -> 'head_turn' -> 'capture'
+    let stage = ENABLE_LIVENESS ? 'blink' : 'capture'; // 'blink' -> 'head_turn' -> 'capture'
     const earBaselineSamples = [];
     let baselineEar = 0;
     let sawBlinkDip = false;
     let sawHeadTurn = false;
     const descriptorSamples = [];
 
-    setLivenessPrompt('Step 1/3: Keep your face centered and BLINK naturally');
+    setLivenessPrompt(
+      ENABLE_LIVENESS
+        ? 'Step 1/3: Keep your face centered and BLINK naturally'
+        : 'Hold still — capturing frontal face...'
+    );
 
     try {
       while (!livenessAbortRef.current) {
@@ -231,7 +241,11 @@ const StudentDashboard = () => {
               const averaged = averageDescriptors(descriptorSamples);
               setLiveDescriptor(averaged);
               setLivenessStatus('verified');
-              setLivenessPrompt('Liveness verified & face captured. Click Submit Attendance.');
+              setLivenessPrompt(
+                ENABLE_LIVENESS
+                  ? 'Liveness verified & face captured. Click Submit Attendance.'
+                  : 'Face captured. Click Submit Attendance to verify.'
+              );
               return;
             }
           } else {
@@ -254,7 +268,7 @@ const StudentDashboard = () => {
         routineId: selectedRoutineId,
         location: verifiedCoords,
         faceDescriptor: liveDescriptor,
-        livenessVerified: true,
+        livenessVerified: ENABLE_LIVENESS,
       });
       alert('Attendance Marked Successfully!');
 
@@ -400,7 +414,7 @@ const StudentDashboard = () => {
                         onClick={captureAndMatch}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-bold shadow-lg flex items-center shadow-blue-500/50"
                       >
-                        <Camera className="w-5 h-5 mr-2" /> Start Liveness & Verify
+                        <Camera className="w-5 h-5 mr-2" /> {ENABLE_LIVENESS ? 'Start Liveness & Verify' : 'Capture & Verify'}
                       </button>
                     </div>
                   )}
@@ -408,7 +422,7 @@ const StudentDashboard = () => {
                   {livenessStatus === 'verified' && (
                     <div className="absolute inset-0 bg-green-500/20 border-4 border-green-500 flex items-center justify-center">
                       <div className="bg-white text-green-600 px-4 py-2 rounded-full font-bold shadow-lg flex items-center text-sm">
-                        <CheckCircle className="w-5 h-5 mr-2" /> Liveness Verified & Face Captured
+                        <CheckCircle className="w-5 h-5 mr-2" /> {ENABLE_LIVENESS ? 'Liveness Verified & Face Captured' : 'Face Captured — Ready to Submit'}
                       </div>
                     </div>
                   )}

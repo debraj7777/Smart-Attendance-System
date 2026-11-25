@@ -32,6 +32,7 @@ function euclideanDistance(a, b) {
   return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0));
 }
 const FACE_MATCH_THRESHOLD = 0.43;
+const REQUIRE_LIVENESS = false;
 
 // ---------------------------------------------------------------------------
 // GET /api/student/attendance-stats
@@ -149,7 +150,7 @@ export const markAttendance = async (req, res) => {
     // ------------------------------------------------------------------
     // 5. Server-side liveness & face descriptor verification
     // ------------------------------------------------------------------
-    if (!livenessVerified) {
+    if (REQUIRE_LIVENESS && !livenessVerified) {
       return res.status(400).json({ message: 'Liveness check must be completed before marking attendance.' });
     }
     if (!liveDescriptor || !Array.isArray(liveDescriptor) || liveDescriptor.length !== 128) {
@@ -210,7 +211,7 @@ export const markAttendance = async (req, res) => {
       actorRole: 'Student',
       action:    'MARK_ATTENDANCE',
       targetId:  newAttendance._id,
-      meta:      { routineId, location, faceDistance: dist.toFixed(4), livenessVerified: true, sessionId: session._id },
+      meta:      { routineId, location, faceDistance: dist.toFixed(4), livenessVerified: Boolean(livenessVerified), sessionId: session._id },
       ip:        req.ip,
       userAgent: req.headers['user-agent'],
     });
